@@ -1,0 +1,86 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: airflow
+  name: airflow-db
+
+spec:
+
+  volumes:
+  - name: postgres-db-pvc
+    persistentVolumeClaim:
+      claimName: postgres-db
+
+  containers:
+
+  - name: postgres
+    image: docker.io/postgres:13
+    command:
+    - docker-entrypoint.sh
+    args:
+    - postgres
+    env:
+    - name: POSTGRES_PASSWORD
+      value: airflow
+    - name: POSTGRES_USER
+      value: airflow
+    - name: POSTGRES_DB
+      value: airflow
+    ports:
+    - containerPort: 5432
+      hostPort: 5432
+      protocol: TCP
+    volumeMounts:
+    - name: postgres-db-pvc
+      mountPath: /var/lib/postgresql/data
+    readinessProbe:
+      exec:
+        command:
+          - pg_isready
+          - --username
+          - airflow
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      failureThreshold: 5
+    securityContext:
+      allowPrivilegeEscalation: true
+      capabilities:
+        drop:
+        - CAP_MKNOD
+        - CAP_NET_RAW
+        - CAP_AUDIT_WRITE
+      privileged: false
+      readOnlyRootFilesystem: false
+    workingDir: /
+
+  - name: redis
+    image: docker.io/library/redis:6
+    command:
+      - docker-entrypoint.sh
+    args:
+      - redis-server
+    ports:
+    - containerPort: 6379
+      protocol: TCP
+    readinessProbe:
+      exec:
+        command:
+          - redis-cli
+          - ping
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      failureThreshold: 5
+    securityContext:
+      allowPrivilegeEscalation: true
+      capabilities:
+        drop:
+        - CAP_MKNOD
+        - CAP_NET_RAW
+        - CAP_AUDIT_WRITE
+      privileged: false
+      readOnlyRootFilesystem: false
+    workingDir: /data
+      
+  restartPolicy: Always

@@ -1,0 +1,170 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: airflow
+  name: airflow-main
+
+x-airflow-common: &airflow-common
+  # image: docker.io/apache/airflow:2.0.1
+  image: localhost/apache/airflow
+  securityContext:
+    runAsUser: 1001
+    #  user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-50000}"
+  env: &airflow-common-env
+  - &pythonpath
+    name: PYTHONPATH
+    value: /home/airflow/.local/lib/python3.6/site-packages
+  - &airflow__core__executor
+    name: AIRFLOW__CORE__EXECUTOR
+    value: CeleryExecutor
+  - &airflow__core__sql_alchemy_conn
+    name: AIRFLOW__CORE__SQL_ALCHEMY_CONN
+    value: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
+  - &airflow__celery__result_backend
+    name: AIRFLOW__CELERY__RESULT_BACKEND
+    value: db+postgresql://airflow:airflow@airflow-db/airflow
+  - &airflow__celery__broker_url
+    name: AIRFLOW__CELERY__BROKER_URL
+    value: redis://:@airflow-db:6379/0
+  - &airflow__core__fernet_key
+    name: AIRFLOW__CORE__FERNET_KEY
+    value: ''
+  - &airflow__core__dags_are_paused_at_creation
+    name: AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION
+    value: 'true'
+  - &airflow__core__load_examples
+    name: AIRFLOW__CORE__LOAD_EXAMPLES
+    value: 'true'
+  - &airflow__webserver__workers
+    name: AIRFLOW__WEBSERVER__WORKERS
+    value: 2 # 2 * NUM_CPU_CORES + 1
+  - &airflow__webserver__worker_refresh_interval
+    name: AIRFLOW__WEBSERVER__WORKER_REFRESH_INTERVAL
+    value: 1800 # Restart workers every 30min instead of 30seconds
+  - &airflow__webserver__web_server_worker_timeout
+    name: AIRFLOW__WEBSERVER__WEB_SERVER_WORKER_TIMEOUT
+    value: 300 #Kill workers if they don't start within 5min instead of 2
+  - &airflow__scheduler__min_file_process_interval
+    name: AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL
+    value: 120
+  - name: AIRFLOW__CELERY__WORKER_CONCURRENCY
+    value: 2
+  volumeMounts:
+  - name: airflow-dags
+    mountPath: /opt/airflow/dags
+  - name: airflow-logs
+    mountPath: /opt/airflow/logs
+  - name: airflow-plugins
+    mountPath: /opt/airflow/plugins
+    
+spec:
+
+  volumes:
+  - name: airflow-dags
+    hostPath:
+      path: ../airflow_files/dags
+  - name: airflow-logs
+    hostPath:
+      path: ../airflow_files/logs
+  - name: airflow-plugins
+    hostPath:
+      path: ../airflow_files/plugins
+
+  containers:
+
+  - name: webserver
+    <<: *airflow-common
+    command:
+      - airflow
+    args:
+      - webserver
+    ports:
+    - containerPort: 8080
+      protocol: TCP
+      hostPort: 8080
+    # readinessProbe:
+    #   exec:
+    #     command:
+    #       - curl
+    #       - --fail
+    #     args:
+    #       - http://localhost:8080/health
+    #   initialDelaySeconds: 10
+    #   periodSeconds: 10
+    #   failureThreshold: 5
+    securityContext:
+      allowPrivilegeEscalation: true
+      capabilities:
+        drop:
+        - CAP_MKNOD
+        - CAP_NET_RAW
+        - CAP_AUDIT_WRITE
+      privileged: false
+      readOnlyRootFilesystem: false
+
+  - name: scheduler
+    <<: *airflow-common
+    command:
+      - airflow
+    args:
+      - scheduler
+    securityContext:
+      allowPrivilegeEscalation: true
+      capabilities:
+        drop:
+        - CAP_MKNOD
+        - CAP_NET_RAW
+        - CAP_AUDIT_WRITE
+      privileged: false
+      readOnlyRootFilesystem: false
+
+  - name: worker
+    <<: *airflow-common
+    command:
+      - airflow
+    args:
+      - celery
+      - worker
+    securityContext:
+      allowPrivilegeEscalation: true
+      capabilities:
+        drop:
+        - CAP_MKNOD
+        - CAP_NET_RAW
+        - CAP_AUDIT_WRITE
+      privileged: false
+      readOnlyRootFilesystem: false
+
+  - name: flower
+    <<: *airflow-common
+    command: 
+      - airflow
+    args:
+      - celery
+      - flower
+    ports:
+    - containerPort: 5555
+      protocol: TCP
+      hostPort: 5555
+    # readinessProbe:
+    #   exec:
+    #     command:
+    #       - curl
+    #       - --fail
+    #     args:
+    #       - http://localhost:5555
+    #   initialDelaySeconds: 10
+    #   periodSeconds: 10
+    #   failureThreshold: 5
+    securityContext:
+      allowPrivilegeEscalation: true
+      capabilities:
+        drop:
+        - CAP_MKNOD
+        - CAP_NET_RAW
+        - CAP_AUDIT_WRITE
+      privileged: false
+      readOnlyRootFilesystem: false
+      
+  restartPolicy: Always
